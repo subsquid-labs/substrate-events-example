@@ -2,25 +2,28 @@ import {In} from 'typeorm'
 import * as ss58 from '@subsquid/ss58'
 import {Store, TypeormDatabase} from '@subsquid/typeorm-store'
 import {Account, Transfer} from './model'
-import {EventItem, ProcessorContext, processor} from './processor'
-import {BalancesTransferEvent} from './types/events'
+import {events} from './types'
+import {Event, ProcessorContext, processor} from './processor'
 
 processor.run(new TypeormDatabase(), async (ctx) => {
     let transfersData: TransferEventData[] = []
 
     for (let block of ctx.blocks) {
-        for (let item of block.items) {
-            if (item.name == 'Balances.Transfer') {
-                let e = getTransfer(ctx, item)
+        for (let event of block.events) {
+            if (event.name===events.balances.transfer.name) {
+                if (block.header.timestamp==null) {
+                    throw new Error(`No timestamp for block ${block.header.height}`)
+                }
+                let tr = getTransfer(ctx, event)
                 transfersData.push({
-                    id: item.event.id,
+                    id: event.id,
                     blockNumber: block.header.height,
                     timestamp: new Date(block.header.timestamp),
-                    extrinsicHash: item.event.extrinsic?.hash,
-                    call: item.event.call?.name,
-                    from: encodeId(e.from),
-                    to: encodeId(e.to),
-                    amount: e.amount,
+                    extrinsicHash: event.extrinsic?.hash,
+                    call: event.call?.name,
+                    from: encodeId(tr.from),
+                    to: encodeId(tr.to),
+                    amount: tr.amount,
                 })
             }
         }
@@ -85,32 +88,30 @@ function getAccount(m: Map<string, Account>, id: string): Account {
     return acc
 }
 
-function encodeId(id: Uint8Array): string {
-    return ss58.codec('kusama').encode(id)
+function encodeId(id: string): string {
+    let idBytes = Uint8Array.from(Buffer.from(id.slice(2), 'hex'))
+    return ss58.codec('kusama').encode(idBytes)
 }
-
-type TransferEventItem = Extract<EventItem, {name: 'Balances.Transfer'}>
 
 function getTransfer(
     ctx: ProcessorContext<Store>,
-    item: TransferEventItem
-): {from: Uint8Array; to: Uint8Array; amount: bigint} {
-    let e = new BalancesTransferEvent(ctx, item.event)
-    if (e.isV1020) {
-        let [from, to, amount] = e.asV1020
+    e: Event
+): {from: string; to: string; amount: bigint} {
+    if (events.balances.transfer.v1020.is(e)) {
+        let [from, to, amount] = events.balances.transfer.v1020.decode(e)
         return {from, to, amount}
-    } else if (e.isV1050) {
-        let [from, to, amount] = e.asV1050
+    } else if (events.balances.transfer.v1050.is(e)) {
+        let [from, to, amount] = events.balances.transfer.v1050.decode(e)
         return {from, to, amount}
-    } else if (e.isV9130) {
-        return e.asV9130
+    } else if (events.balances.transfer.v9130.is(e)) {
+        return events.balances.transfer.v9130.decode(e)
     } else {
-        throw new UknownVersionError()
+        throw new UnknownVersionError()
     }
 }
 
-class UknownVersionError extends Error {
+class UnknownVersionError extends Error {
     constructor() {
-        super('Uknown verson')
+        super('Unknown verson')
     }
 }
