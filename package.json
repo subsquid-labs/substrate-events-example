@@ -8,7 +8,6 @@
     "build": "rm -rf lib && tsc"
   },
   "dependencies": {
-    "@subsquid/archive-registry": "^3.1.0",
     "@subsquid/graphql-server": "^4.7.0",
     "@subsquid/ss58": "^2.0.2",
     "@subsquid/substrate-processor": "^8.5.0",
